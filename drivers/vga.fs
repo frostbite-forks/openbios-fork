@@ -264,13 +264,13 @@ headerless
     mmio-addr -1 = if
       map-mmio-bar0
     then
-  then
-  mmio-addr -1 <> if
-    vbe-init
+    mmio-addr -1 <> if
+      vbe-init
+    then
   then
 
   fb-addr -1 = if
-    \ NV20: BAR0 is MMIO and BAR1 is VRAM — try BAR1 first.
+    \ NV20: BAR0 is MMIO, BAR1 is VRAM (pci-vga uses BAR0 for VRAM).
     map-fb-bar1
     fb-addr -1 = if
       map-fb
@@ -303,7 +303,6 @@ headerless
   then
 
   ['] qemu-vga-driver-install is-install
-  qemu-vga-driver-install
 ;
 
 qemu-vga-driver-init

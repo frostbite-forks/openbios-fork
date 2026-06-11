@@ -1134,11 +1134,9 @@ int vga_config_cb (const pci_config_t *config)
 {
 #ifdef CONFIG_PPC
         unsigned long rom;
-        uint32_t rom_size, bar, fcode_off;
+        uint32_t rom_size, bar;
         phandle_t ph;
         uint16_t vendor_id, device_id;
-        char cmd[64];
-        int use_rom_fcode = 0;
 #endif
         if (config->assigned[0] != 0x00000000 ||
             config->assigned[1] != 0x00000000) {
@@ -1161,10 +1159,6 @@ int vga_config_cb (const pci_config_t *config)
                     if (rom_size >= 8) {
                             pci_rom_install_mac_driver(ph, (const char *)rom,
                                                        rom_size);
-
-                            use_rom_fcode = pci_rom_fcode_offset((const char *)rom,
-                                                                   rom_size,
-                                                                   &fcode_off);
                     }
             }
 
@@ -1208,17 +1202,8 @@ int vga_config_cb (const pci_config_t *config)
             feval("['] vga-driver-fcode 2 cells + 1 byte-load");
 
             if (vendor_id == PCI_VENDOR_ID_NVIDIA &&
-                device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3) {
-                if (use_rom_fcode) {
-                    snprintf(cmd, sizeof(cmd), "%#lx 1 byte-load",
-                             rom + fcode_off);
-                    feval(cmd);
-                }
-                vga_sync_video_from_package(ph);
+                device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3)
                 vga_fixup_geforce3_fb(config, ph);
-                /* GF3 ROM/VBE may have moved the framebuffer — reinstall console. */
-                feval("qemu-vga-driver-install");
-            }
 #endif
 
 #ifdef CONFIG_MOL
