@@ -269,6 +269,8 @@ headerless
     then
   then
 
+  1 encode-int " driver-reg-properties" property
+
   fb-addr -1 = if
     \ NV20: BAR0 is MMIO, BAR1 is VRAM (pci-vga uses BAR0 for VRAM).
     map-fb-bar1
