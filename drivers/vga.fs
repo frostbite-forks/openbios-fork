@@ -270,9 +270,10 @@ headerless
   then
 
   fb-addr -1 = if
-    map-fb
+    \ NV20: BAR0 is MMIO and BAR1 is VRAM — try BAR1 first.
+    map-fb-bar1
     fb-addr -1 = if
-      map-fb-bar1
+      map-fb
     then
     fb-addr to frame-buffer-adr
     default-font set-font

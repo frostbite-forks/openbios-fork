@@ -16,6 +16,7 @@
  */
 
 #include "config.h"
+#include <string.h>
 #include "libopenbios/bindings.h"
 #include "libopenbios/ofmem.h"
 #include "kernel/kernel.h"
@@ -1003,6 +1004,71 @@ int macio_keylargo_config_cb (const pci_config_t *config)
 }
 
 #ifdef CONFIG_PPC
+static int pci_rom_is_fcode(const unsigned char *fcode)
+{
+	return (fcode[0] == 0xf0 || fcode[0] == 0xf1 || fcode[0] == 0xf2 ||
+		fcode[0] == 0xf3 || fcode[0] == 0xfd);
+}
+
+static const char *pci_rom_find(const char *rom, uint32_t rom_size,
+				const char *magic, size_t magic_len)
+{
+	uint32_t i;
+
+	for (i = 0; i + magic_len <= rom_size; i++) {
+		if (memcmp(rom + i, magic, magic_len) == 0)
+			return rom + i;
+	}
+	return NULL;
+}
+
+static int pci_rom_fcode_offset(const char *rom, uint32_t rom_size,
+				uint32_t *fcode_off)
+{
+	uint16_t pcir_off;
+	const pci_data_t *pd;
+
+	if (rom_size < 0x40 || (uint8_t)rom[0] != 0x55 || (uint8_t)rom[1] != 0xaa)
+		return 0;
+
+	pcir_off = rom[0x18] | (rom[0x19] << 8);
+	if (pcir_off + sizeof(pci_data_t) > rom_size)
+		return 0;
+
+	pd = (const pci_data_t *)(rom + pcir_off);
+	if (pd->signature != 0x52494350) /* 'PCIR' */
+		return 0;
+
+	if (pd->type != 0x01)
+		return 0;
+
+	*fcode_off = pcir_off + pd->dlen;
+	if (*fcode_off >= rom_size)
+		return 0;
+
+	return pci_rom_is_fcode((const unsigned char *)(rom + *fcode_off));
+}
+
+static void pci_rom_install_mac_driver(phandle_t ph, const char *rom,
+				       uint32_t rom_size)
+{
+	const char *p;
+	uint32_t size;
+
+	p = pci_rom_find(rom, rom_size, "NDRV", 4);
+	if (p) {
+		size = *(uint32_t *)(p + 4);
+		if (p + 8 + size <= rom + rom_size)
+			set_property(ph, "driver,AAPL,MacOS,PowerPC", p + 8, size);
+		return;
+	}
+
+	p = pci_rom_find(rom, rom_size, "Joy!", 4);
+	if (p)
+		set_property(ph, "driver,AAPL,MacOS,PowerPC",
+			     p, rom + rom_size - p);
+}
+
 static const uint8_t nvidia_bmp_sig[] = { 0xff, 0x7f, 'N', 'V' };
 
 static const uint8_t *nvidia_find_bmp(const uint8_t *rom, size_t rom_size)
@@ -1069,13 +1135,19 @@ int vga_config_cb (const pci_config_t *config)
 {
 #ifdef CONFIG_PPC
         unsigned long rom;
-        uint32_t rom_size, size, bar;
+        uint32_t rom_size, bar, fcode_off;
         phandle_t ph;
+        uint16_t vendor_id, device_id;
+        char cmd[64];
+        int use_rom_fcode = 0;
 #endif
-        if (config->assigned[0] != 0x00000000) {
+        if (config->assigned[0] != 0x00000000 ||
+            config->assigned[1] != 0x00000000) {
             setup_video();
 
 #ifdef CONFIG_PPC
+            vendor_id = pci_config_read16(config->dev, PCI_VENDOR_ID);
+            device_id = pci_config_read16(config->dev, PCI_DEVICE_ID);
             ph = get_cur_dev();
 
             if (config->assigned[6]) {
@@ -1088,34 +1160,24 @@ int vga_config_cb (const pci_config_t *config)
                     pci_config_write32(config->dev, PCI_COMMAND, bar);
 
                     if (rom_size >= 8) {
-                            const char *p;
+                            pci_rom_install_mac_driver(ph, (const char *)rom,
+                                                       rom_size);
 
-                            p = (const char *)rom;
-                            if (p[0] == 'N' && p[1] == 'D' && p[2] == 'R' && p[3] == 'V') {
-                                    size = *(uint32_t*)(p + 4);
-                                    set_property(ph, "driver,AAPL,MacOS,PowerPC",
-                                                 p + 8, size);
-                            } else if (p[0] == 'J' && p[1] == 'o' &&
-                                       p[2] == 'y' && p[3] == '!') {
-                                    set_property(ph, "driver,AAPL,MacOS,PowerPC",
-                                                 p, rom_size);
-                            }
+                            use_rom_fcode = pci_rom_fcode_offset((const char *)rom,
+                                                                   rom_size,
+                                                                   &fcode_off);
                     }
             }
 
-            if (pci_config_read16(config->dev, PCI_VENDOR_ID) ==
-                    PCI_VENDOR_ID_ATI &&
-                pci_config_read16(config->dev, PCI_DEVICE_ID) ==
-                    PCI_DEVICE_ID_ATI_RAGE128_PF) {
+            if (vendor_id == PCI_VENDOR_ID_ATI &&
+                device_id == PCI_DEVICE_ID_ATI_RAGE128_PF) {
                 /* Four-byte big-endian capability mask — presence alone
                  * satisfies the Display Manager "is accelerated?" test. */
                 static const uint8_t ati_drv_reg[4] = { 0x00, 0x00, 0x00, 0x01 };
                 set_property(ph, "driver-reg-properties",
                              (const char *)ati_drv_reg, sizeof(ati_drv_reg));
-            } else if (pci_config_read16(config->dev, PCI_VENDOR_ID) ==
-                    PCI_VENDOR_ID_NVIDIA &&
-                pci_config_read16(config->dev, PCI_DEVICE_ID) ==
-                    PCI_DEVICE_ID_NVIDIA_GEFORCE3) {
+            } else if (vendor_id == PCI_VENDOR_ID_NVIDIA &&
+                       device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3) {
                 static const uint8_t nvidia_drv_reg[4] = { 0x00, 0x00, 0x00, 0x01 };
                 static const uint8_t geforce3_features[16] = {
                     0xb2, 0x08, 0xcb, 0x14, 0x00, 0x3a, 0x08, 0xce,
@@ -1142,17 +1204,26 @@ int vga_config_cb (const pci_config_t *config)
                     }
                 }
             }
+
+            if (use_rom_fcode) {
+                    snprintf(cmd, sizeof(cmd), "%#lx 1 byte-load",
+                             rom + fcode_off);
+                    feval(cmd);
+            } else
 #endif
+            {
+                    /* Currently we don't read FCode from the hardware but execute
+                     * it directly */
+                    feval("['] vga-driver-fcode 2 cells + 1 byte-load");
+            }
 
-            /* Currently we don't read FCode from the hardware but execute
-             * it directly */
-            feval("['] vga-driver-fcode 2 cells + 1 byte-load");
+#ifdef CONFIG_PPC
+            vga_sync_video_from_package(ph);
 
-            if (pci_config_read16(config->dev, PCI_VENDOR_ID) ==
-                    PCI_VENDOR_ID_NVIDIA &&
-                pci_config_read16(config->dev, PCI_DEVICE_ID) ==
-                    PCI_DEVICE_ID_NVIDIA_GEFORCE3)
+            if (vendor_id == PCI_VENDOR_ID_NVIDIA &&
+                device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3)
                 vga_fixup_geforce3_fb(config, ph);
+#endif
 
 #ifdef CONFIG_MOL
             /* Install special words for Mac On Linux */
