@@ -1003,12 +1003,6 @@ int macio_keylargo_config_cb (const pci_config_t *config)
 }
 
 #ifdef CONFIG_PPC
-static int pci_rom_is_fcode(const unsigned char *fcode)
-{
-	return (fcode[0] == 0xf0 || fcode[0] == 0xf1 || fcode[0] == 0xf2 ||
-		fcode[0] == 0xf3 || fcode[0] == 0xfd);
-}
-
 static const char *pci_rom_find(const char *rom, uint32_t rom_size,
 				const char *magic, size_t magic_len)
 {
@@ -1019,33 +1013,6 @@ static const char *pci_rom_find(const char *rom, uint32_t rom_size,
 			return rom + i;
 	}
 	return NULL;
-}
-
-static int pci_rom_fcode_offset(const char *rom, uint32_t rom_size,
-				uint32_t *fcode_off)
-{
-	uint16_t pcir_off;
-	const pci_data_t *pd;
-
-	if (rom_size < 0x40 || (uint8_t)rom[0] != 0x55 || (uint8_t)rom[1] != 0xaa)
-		return 0;
-
-	pcir_off = rom[0x18] | (rom[0x19] << 8);
-	if (pcir_off + sizeof(pci_data_t) > rom_size)
-		return 0;
-
-	pd = (const pci_data_t *)(rom + pcir_off);
-	if (pd->signature != 0x52494350) /* 'PCIR' */
-		return 0;
-
-	if (pd->type != 0x01)
-		return 0;
-
-	*fcode_off = pcir_off + pd->dlen;
-	if (*fcode_off >= rom_size)
-		return 0;
-
-	return pci_rom_is_fcode((const unsigned char *)(rom + *fcode_off));
 }
 
 static void pci_rom_install_mac_driver(phandle_t ph, const char *rom,
