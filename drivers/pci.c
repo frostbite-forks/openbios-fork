@@ -1082,7 +1082,7 @@ vga_fixup_geforce3_fb(const pci_config_t *config, phandle_t ph)
 	u32 fboff = 0;
 	int len;
 
-	if (!config->assigned[1] || !config->sizes[1])
+	if (!ph || !config->assigned[1] || !config->sizes[1])
 		return;
 
 	virt = ob_pci_map(config->assigned[1], config->sizes[1]);
@@ -1094,6 +1094,7 @@ vga_fixup_geforce3_fb(const pci_config_t *config, phandle_t ph)
 	snprintf(cmd, sizeof(cmd), FMT_ucell " to frame-buffer-adr", virt + fboff);
 	feval(cmd);
 	set_int_property(ph, "address", virt + fboff);
+	set_int_property(ph, "fboffset", fboff);
 }
 #endif
 
@@ -1105,13 +1106,18 @@ int vga_config_cb (const pci_config_t *config)
         phandle_t ph;
         uint16_t vendor_id, device_id;
 #endif
-        if (config->assigned[0] != 0x00000000) {
+        if (config->assigned[0] != 0x00000000 ||
+            config->assigned[1] != 0x00000000) {
             setup_video();
 
 #ifdef CONFIG_PPC
             vendor_id = pci_config_read16(config->dev, PCI_VENDOR_ID);
             device_id = pci_config_read16(config->dev, PCI_DEVICE_ID);
             ph = get_cur_dev();
+
+            if (!ph) {
+                    return 0;
+            }
 
             if (config->assigned[6]) {
                     rom = pci_bus_addr_to_host_addr(MEMORY_SPACE_32,

@@ -245,6 +245,8 @@ defer mol-color!
 \ Cancel Bochs VBE mode
 \
 
+external
+
 : vbe-deinit ( -- )
   \ Switching VBE on and off clears the framebuffer
   VBE_DISPI_DISABLED VBE_DISPI_INDEX_ENABLE vbe-iow!
@@ -268,8 +270,6 @@ headerless
       vbe-init
     then
   then
-
-  1 encode-int " driver-reg-properties" property
 
   fb-addr -1 = if
     \ NV20: BAR0 is MMIO, BAR1 is VRAM (pci-vga uses BAR0 for VRAM).
