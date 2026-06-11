@@ -1002,6 +1002,45 @@ int macio_keylargo_config_cb (const pci_config_t *config)
         return 0;
 }
 
+#ifdef CONFIG_PPC
+static const uint8_t nvidia_bmp_sig[] = { 0xff, 0x7f, 'N', 'V' };
+
+static const uint8_t *nvidia_find_bmp(const uint8_t *rom, size_t rom_size)
+{
+	size_t i;
+
+	if (rom_size < sizeof(nvidia_bmp_sig))
+		return NULL;
+
+	for (i = 0; i <= rom_size - sizeof(nvidia_bmp_sig); i++) {
+		if (rom[i] == nvidia_bmp_sig[0] &&
+		    rom[i + 1] == nvidia_bmp_sig[1] &&
+		    rom[i + 2] == nvidia_bmp_sig[2] &&
+		    rom[i + 3] == nvidia_bmp_sig[3])
+			return rom + i;
+	}
+
+	return NULL;
+}
+
+static size_t nvidia_bmp_length(const uint8_t *bmp, size_t max)
+{
+	size_t sz;
+
+	for (sz = 2048; sz <= max; sz++) {
+		uint8_t sum = 0;
+		size_t i;
+
+		for (i = 0; i < sz; i++)
+			sum += bmp[i];
+		if (sum == 0)
+			return sz;
+	}
+
+	return 0;
+}
+#endif
+
 int vga_config_cb (const pci_config_t *config)
 {
 #ifdef CONFIG_PPC
@@ -1013,6 +1052,8 @@ int vga_config_cb (const pci_config_t *config)
             setup_video();
 
 #ifdef CONFIG_PPC
+            ph = get_cur_dev();
+
             if (config->assigned[6]) {
                     rom = pci_bus_addr_to_host_addr(MEMORY_SPACE_32,
                                                     config->assigned[6] & ~0x0000000F);
@@ -1021,7 +1062,6 @@ int vga_config_cb (const pci_config_t *config)
                     bar = pci_config_read32(config->dev, PCI_ROM_ADDRESS);
                     bar |= PCI_ROM_ADDRESS_ENABLE;
                     pci_config_write32(config->dev, PCI_COMMAND, bar);
-                    ph = get_cur_dev();
 
                     if (rom_size >= 8) {
                             const char *p;
@@ -1037,6 +1077,46 @@ int vga_config_cb (const pci_config_t *config)
                                                  p, rom_size);
                             }
                     }
+            }
+
+            if (pci_config_read16(config->dev, PCI_VENDOR_ID) ==
+                    PCI_VENDOR_ID_ATI &&
+                pci_config_read16(config->dev, PCI_DEVICE_ID) ==
+                    PCI_DEVICE_ID_ATI_RAGE128_PF) {
+                /* Four-byte big-endian capability mask — presence alone
+                 * satisfies the Display Manager "is accelerated?" test. */
+                static const uint8_t ati_drv_reg[4] = { 0x00, 0x00, 0x00, 0x01 };
+                set_property(ph, "driver-reg-properties",
+                             (const char *)ati_drv_reg, sizeof(ati_drv_reg));
+            } else if (pci_config_read16(config->dev, PCI_VENDOR_ID) ==
+                    PCI_VENDOR_ID_NVIDIA &&
+                pci_config_read16(config->dev, PCI_DEVICE_ID) ==
+                    PCI_DEVICE_ID_NVIDIA_GEFORCE3) {
+                static const uint8_t nvidia_drv_reg[4] = { 0x00, 0x00, 0x00, 0x01 };
+                static const uint8_t geforce3_features[16] = {
+                    0xb2, 0x08, 0xcb, 0x14, 0x00, 0x3a, 0x08, 0xce,
+                    0x10, 0x00, 0x00, 0x00, 0x7f, 0x3c, 0x14, 0x00,
+                };
+                const uint8_t *bmp;
+                size_t bmp_len;
+
+                set_property(ph, "driver-reg-properties",
+                             (const char *)nvidia_drv_reg, sizeof(nvidia_drv_reg));
+                set_property(ph, "NVDA,Features",
+                             (const char *)geforce3_features, sizeof(geforce3_features));
+
+                if (config->assigned[6]) {
+                    const uint8_t *rom_ptr = (const uint8_t *)rom;
+                    size_t rom_avail = rom_size;
+
+                    bmp = nvidia_find_bmp(rom_ptr, rom_avail);
+                    if (bmp) {
+                        bmp_len = nvidia_bmp_length(bmp, rom_avail - (bmp - rom_ptr));
+                        if (bmp_len)
+                            set_property(ph, "NVDA,BMP",
+                                         (const char *)bmp, bmp_len);
+                    }
+                }
             }
 #endif
 
