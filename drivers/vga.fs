@@ -303,6 +303,7 @@ headerless
   then
 
   ['] qemu-vga-driver-install is-install
+  qemu-vga-driver-install
 ;
 
 qemu-vga-driver-init

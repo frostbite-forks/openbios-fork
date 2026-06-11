@@ -1204,24 +1204,21 @@ int vga_config_cb (const pci_config_t *config)
                 }
             }
 
-            if (use_rom_fcode) {
+            /* Embedded driver sets up the OpenBIOS text console (banner). */
+            feval("['] vga-driver-fcode 2 cells + 1 byte-load");
+
+            if (vendor_id == PCI_VENDOR_ID_NVIDIA &&
+                device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3) {
+                if (use_rom_fcode) {
                     snprintf(cmd, sizeof(cmd), "%#lx 1 byte-load",
                              rom + fcode_off);
                     feval(cmd);
-            } else
-#endif
-            {
-                    /* Currently we don't read FCode from the hardware but execute
-                     * it directly */
-                    feval("['] vga-driver-fcode 2 cells + 1 byte-load");
-            }
-
-#ifdef CONFIG_PPC
-            vga_sync_video_from_package(ph);
-
-            if (vendor_id == PCI_VENDOR_ID_NVIDIA &&
-                device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3)
+                }
+                vga_sync_video_from_package(ph);
                 vga_fixup_geforce3_fb(config, ph);
+                /* GF3 ROM/VBE may have moved the framebuffer — reinstall console. */
+                feval("qemu-vga-driver-install");
+            }
 #endif
 
 #ifdef CONFIG_MOL
