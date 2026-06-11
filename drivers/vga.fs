@@ -58,8 +58,9 @@ fcode-version3
 " pci-bar>pci-addr" (find-xt) value pci-bar>pci-addr-xt
 : pci-bar>pci-addr pci-bar>pci-addr-xt execute ;
 
-h# 10 constant cfg-bar0    \ Framebuffer BAR
-h# 18 constant cfg-bar2    \ QEMU MMIO ioport BAR
+h# 10 constant cfg-bar0    \ BAR0: MMIO on NV20, framebuffer on pci-vga
+h# 14 constant cfg-bar1    \ BAR1: framebuffer on NV20
+h# 18 constant cfg-bar2    \ QEMU pci-vga MMIO ioport BAR
 -1 value fb-addr
 -1 value mmio-addr
 
@@ -120,7 +121,7 @@ defer vbe-iow!
 ;
 
 : vbe-mmio-iow!  ( val addr -- )
-  1 lshift h# 500 + mmio-addr + cr .s cr le-w!
+  1 lshift h# 500 + mmio-addr + le-w!
 ;
 
 \
@@ -151,8 +152,22 @@ defer vbe-iow!
   then
 ;
 
+: map-fb-bar1 ( -- )
+  cfg-bar1 pci-bar>pci-addr if
+    " pci-map-in" $call-parent
+    to fb-addr
+  then
+;
+
 : map-mmio ( -- )
   cfg-bar2 pci-bar>pci-addr if   \ ( pci-addr.lo pci-addr.mid pci-addr.hi size )
+    " pci-map-in" $call-parent
+    to mmio-addr
+  then
+;
+
+: map-mmio-bar0 ( -- )
+  cfg-bar0 pci-bar>pci-addr if   \ NV20: MMIO registers at BAR0
     " pci-map-in" $call-parent
     to mmio-addr
   then
@@ -245,10 +260,21 @@ headerless
 
 : qemu-vga-driver-install ( -- )
   mmio-addr -1 = if
-    map-mmio vbe-init
+    map-mmio
+    mmio-addr -1 = if
+      map-mmio-bar0
+    then
   then
+  mmio-addr -1 <> if
+    vbe-init
+  then
+
   fb-addr -1 = if
-    map-fb fb-addr to frame-buffer-adr
+    map-fb
+    fb-addr -1 = if
+      map-fb-bar1
+    then
+    fb-addr to frame-buffer-adr
     default-font set-font
 
     frame-buffer-adr encode-int " address" property

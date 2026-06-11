@@ -1041,6 +1041,30 @@ static size_t nvidia_bmp_length(const uint8_t *bmp, size_t max)
 }
 #endif
 
+#ifdef CONFIG_PPC
+static void
+vga_fixup_geforce3_fb(const pci_config_t *config, phandle_t ph)
+{
+	char cmd[64];
+	ucell virt;
+	u32 fboff = 0;
+	int len;
+
+	if (!config->assigned[1] || !config->sizes[1])
+		return;
+
+	virt = ob_pci_map(config->assigned[1], config->sizes[1]);
+	fboff = get_int_property(ph, "fboffset", &len);
+	if (len < (int)sizeof(u32))
+		fboff = 0;
+
+	VIDEO_DICT_VALUE(video.mvirt) = virt + fboff;
+	snprintf(cmd, sizeof(cmd), FMT_ucell " to frame-buffer-adr", virt + fboff);
+	feval(cmd);
+	set_int_property(ph, "address", virt + fboff);
+}
+#endif
+
 int vga_config_cb (const pci_config_t *config)
 {
 #ifdef CONFIG_PPC
@@ -1123,6 +1147,12 @@ int vga_config_cb (const pci_config_t *config)
             /* Currently we don't read FCode from the hardware but execute
              * it directly */
             feval("['] vga-driver-fcode 2 cells + 1 byte-load");
+
+            if (pci_config_read16(config->dev, PCI_VENDOR_ID) ==
+                    PCI_VENDOR_ID_NVIDIA &&
+                pci_config_read16(config->dev, PCI_DEVICE_ID) ==
+                    PCI_DEVICE_ID_NVIDIA_GEFORCE3)
+                vga_fixup_geforce3_fb(config, ph);
 
 #ifdef CONFIG_MOL
             /* Install special words for Mac On Linux */
