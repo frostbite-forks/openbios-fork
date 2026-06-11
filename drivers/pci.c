@@ -1073,30 +1073,6 @@ static size_t nvidia_bmp_length(const uint8_t *bmp, size_t max)
 }
 #endif
 
-#ifdef CONFIG_PPC
-static void
-vga_fixup_geforce3_fb(const pci_config_t *config, phandle_t ph)
-{
-	char cmd[64];
-	ucell virt;
-	u32 fboff = 0;
-	int len;
-
-	if (!config->assigned[1] || !config->sizes[1])
-		return;
-
-	virt = ob_pci_map(config->assigned[1], config->sizes[1]);
-	fboff = get_int_property(ph, "fboffset", &len);
-	if (len < (int)sizeof(u32))
-		fboff = 0;
-
-	VIDEO_DICT_VALUE(video.mvirt) = virt + fboff;
-	snprintf(cmd, sizeof(cmd), FMT_ucell " to frame-buffer-adr", virt + fboff);
-	feval(cmd);
-	set_int_property(ph, "address", virt + fboff);
-}
-#endif
-
 int vga_config_cb (const pci_config_t *config)
 {
 #ifdef CONFIG_PPC
@@ -1105,8 +1081,7 @@ int vga_config_cb (const pci_config_t *config)
         phandle_t ph;
         uint16_t vendor_id, device_id;
 #endif
-        if (config->assigned[0] != 0x00000000 ||
-            config->assigned[1] != 0x00000000) {
+        if (config->assigned[0] != 0x00000000) {
             setup_video();
 
 #ifdef CONFIG_PPC
@@ -1165,12 +1140,7 @@ int vga_config_cb (const pci_config_t *config)
                 }
             }
 
-            /* Embedded driver sets up the OpenBIOS text console (banner). */
             feval("['] vga-driver-fcode 2 cells + 1 byte-load");
-
-            if (vendor_id == PCI_VENDOR_ID_NVIDIA &&
-                device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3)
-                vga_fixup_geforce3_fb(config, ph);
 #endif
 
 #ifdef CONFIG_MOL
