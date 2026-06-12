@@ -1170,24 +1170,16 @@ int vga_config_cb (const pci_config_t *config)
                 }
             }
 
-            if (vendor_id == PCI_VENDOR_ID_NVIDIA &&
-                device_id == PCI_DEVICE_ID_NVIDIA_GEFORCE3 &&
-                config->assigned[6]) {
-                /*
-                 * For the NV20 (GeForce3), execute the card's own FCode ROM
-                 * directly rather than the generic QEMU VGA FCode.  The GF3
-                 * ROM image is a standard OFW PCI ROM; its FCode starts at
-                 * byte 0x40 (right after the 64-byte x86/PCI stub header).
-                 * byte-load takes ( addr xt -- ) where xt=1 means use c@.
-                 */
-                char cmd[64];
-                snprintf(cmd, sizeof(cmd),
-                         FMT_ucell " 1 byte-load",
-                         (ucell)(rom + 0x40));
-                feval(cmd);
-            } else {
-                feval("['] vga-driver-fcode 2 cells + 1 byte-load");
-            }
+            /*
+             * Always use the generic QEMU VGA FCode for display methods
+             * (draw-rectangle, fill-rectangle etc.) — it uses simple
+             * framebuffer writes that work without GPU acceleration.
+             * The GF3 ROM's own FCode uses NV FIFO/PGRAPH acceleration
+             * which hangs during early boot before the kernel driver runs.
+             * NV20-specific device tree properties (NVDA,Features, NVDA,BMP)
+             * are set above so BootX and the kernel can still identify the card.
+             */
+            feval("['] vga-driver-fcode 2 cells + 1 byte-load");
 
             vga_sync_video_from_package(ph);
 
