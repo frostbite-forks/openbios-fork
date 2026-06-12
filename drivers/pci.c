@@ -1178,13 +1178,12 @@ int vga_config_cb (const pci_config_t *config)
                  * directly rather than the generic QEMU VGA FCode.  The GF3
                  * ROM image is a standard OFW PCI ROM; its FCode starts at
                  * byte 0x40 (right after the 64-byte x86/PCI stub header).
-                 * byte-load takes ( addr len -- ) and interprets the FCode.
+                 * byte-load takes ( addr xt -- ) where xt=1 means use c@.
                  */
-                char cmd[128];
+                char cmd[64];
                 snprintf(cmd, sizeof(cmd),
-                         FMT_ucell " h# %x byte-load",
-                         (ucell)(rom + 0x40),
-                         (unsigned int)(rom_size - 0x40));
+                         FMT_ucell " 1 byte-load",
+                         (ucell)(rom + 0x40));
                 feval(cmd);
             } else {
                 feval("['] vga-driver-fcode 2 cells + 1 byte-load");
