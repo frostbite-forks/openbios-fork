@@ -43,6 +43,10 @@ void __exit_context(void); /* assembly routine */
 void entry(void);
 void of_client_callback(void);
 
+/* Declared in start.S; of_client_callback reads *saved_stack to find the
+ * OpenBIOS stack base when BootX calls back into the firmware. */
+extern unsigned long saved_stack;
+
 /*
  * Main context structure
  * It is placed at the bottom of our stack, and loaded by assembly routine
@@ -276,6 +280,10 @@ struct context *switch_to(struct context *ctx)
     debug("switching to new context:\n");
     save = __context;
     __context = ctx;
+
+    /* Capture current OpenBIOS r1 so of_client_callback can restore the OF
+     * stack when the client program calls back into firmware. */
+    asm __volatile__ ("stw %%r1, %0" : "=m" (saved_stack));
 
     asm __volatile__ ("mflr %%r9\n\t"
                       "stw %%r9, %0\n\t"
